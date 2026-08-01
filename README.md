@@ -15,7 +15,12 @@ a reply → the phone reads the reply out loud. All of it happens on the
 device by default:
 
 ```
-mic / audio file ──▶ whisper.cpp (speech to text) ──▶ Qwen3.5-0.8B (the "brain") ──▶ Piper (text to speech)
+                                                     ┌─▶ Qwen3.5-0.8B, on-device (default)
+mic / audio file ──▶ whisper.cpp (speech to text) ──┤
+                                                     └─▶ your cloud model, online mode (opt-in)
+                                                                  │
+                                                                  ▼
+                                                     Piper (text to speech)
 ```
 
 ## What's inside
