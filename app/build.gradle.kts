@@ -40,6 +40,8 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.activity:activity-ktx:1.9.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    // Encrypts the optional cloud API key at rest (Settings.kt).
-    implementation("androidx.security:security-crypto:1.0.0")
+    // Encrypts the optional cloud API key at rest (Settings.kt). 1.1.0 is
+    // the version with the MasterKey builder API this code uses — 1.0.0
+    // only has the older MasterKeys API and won't compile against it.
+    implementation("androidx.security:security-crypto:1.1.0")
 }
