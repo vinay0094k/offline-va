@@ -12,8 +12,8 @@ import android.media.AudioTrack
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
-import android.view.MeasureSpec
 import android.view.View
+import android.view.View.MeasureSpec
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar

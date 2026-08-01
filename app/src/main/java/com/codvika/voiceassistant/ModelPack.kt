@@ -5,8 +5,9 @@ import android.net.Uri
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileDescriptor
+import java.io.FileInputStream
 import java.io.IOException
-import java.io.RandomAccessFile
+import java.nio.ByteBuffer
 import java.util.zip.ZipInputStream
 
 /**
@@ -112,22 +113,27 @@ object ModelPack {
 
     /**
      * Sums uncompressed entry sizes by reading the end-of-central-directory
-     * record and each central-directory entry header.
+     * record and each central-directory entry header. Android's RandomAccessFile
+     * has no FileDescriptor constructor, so a FileInputStream channel is used
+     * for seeking.
      */
     private fun totalUncompressedSize(fd: FileDescriptor): Long {
-        RandomAccessFile(fd, "r").use { raf ->
-            val len = raf.length()
+        FileInputStream(fd).use { fis ->
+            val ch = fis.channel
+            val len = ch.size()
             // The EOCD sits within the last 64 KB (max comment) + its 22 bytes.
             val scanStart = (len - (64L * 1024 + 22)).coerceAtLeast(0)
             val scanLen = (len - scanStart).toInt()
-            val buf = ByteArray(scanLen)
-            raf.seek(scanStart)
-            raf.readFully(buf)
+            val buf = ByteBuffer.allocate(scanLen)
+            ch.position(scanStart)
+            while (buf.hasRemaining() && ch.read(buf) >= 0) {
+            }
+            val bytes = buf.array()
 
             var eocd = -1
-            for (i in buf.size - 22 downTo 0) {
-                if (buf[i] == 0x50.toByte() && buf[i + 1] == 0x4b.toByte() &&
-                    buf[i + 2] == 0x05.toByte() && buf[i + 3] == 0x06.toByte()
+            for (i in bytes.size - 22 downTo 0) {
+                if (bytes[i] == 0x50.toByte() && bytes[i + 1] == 0x4b.toByte() &&
+                    bytes[i + 2] == 0x05.toByte() && bytes[i + 3] == 0x06.toByte()
                 ) {
                     eocd = i
                     break
@@ -136,23 +142,27 @@ object ModelPack {
             if (eocd < 0) throw IOException("not a valid zip (no central directory)")
 
             // EOCD fields: total entries (2 bytes) at +10, CD offset (4) at +16.
-            val totalEntries = le16(buf, eocd + 10)
-            val cdOffset = le32(buf, eocd + 16)
+            val totalEntries = le16(bytes, eocd + 10)
+            val cdOffset = le32(bytes, eocd + 16)
 
-            raf.seek(cdOffset)
-            val head = ByteArray(46)
+            ch.position(cdOffset)
+            val head = ByteBuffer.allocate(46)
             var total = 0L
             for (i in 0 until totalEntries) {
-                raf.readFully(head)
-                if (head[0] != 0x50.toByte() || head[1] != 0x4b.toByte() ||
-                    head[2] != 0x01.toByte() || head[3] != 0x02.toByte()
+                head.clear()
+                while (head.hasRemaining()) {
+                    if (ch.read(head) < 0) throw IOException("corrupt zip central directory")
+                }
+                val h = head.array()
+                if (h[0] != 0x50.toByte() || h[1] != 0x4b.toByte() ||
+                    h[2] != 0x01.toByte() || h[3] != 0x02.toByte()
                 ) {
                     throw IOException("corrupt zip central directory")
                 }
                 // Central-directory header: uncompressed size (4) at +24,
                 // then name/extra/comment lengths (2 each) at +28/+30/+32.
-                total += le32(head, 24)
-                raf.skipBytes(le16(head, 28) + le16(head, 30) + le16(head, 32))
+                total += le32(h, 24)
+                ch.position(ch.position() + le16(h, 28) + le16(h, 30) + le16(h, 32))
             }
             return total
         }
