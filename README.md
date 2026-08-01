@@ -28,7 +28,8 @@ mic / audio file ──▶ whisper.cpp (speech to text) ──┤
 | Job | Engine | Model file | Size |
 |---|---|---|---|
 | Speech → text | whisper.cpp `v1.9.1` | `ggml-base.en-q5_1.bin` | ~57 MB |
-| Thinking / replies | llama.cpp `b10217` | `Qwen3.5-0.8B-Q4_K_M.gguf` | ~508 MB |
+| Thinking / replies (on-device, default) | llama.cpp `b10217` | `Qwen3.5-0.8B-Q4_K_M.gguf` | ~508 MB |
+| Thinking / replies (online mode, opt-in) | your configured cloud API | none — no download | 0 MB |
 | Text → speech | sherpa-onnx `1.13.4` | Piper voice `en_US-amy-low` | ~65 MB |
 
 ## Why the app and the models are two separate downloads
