@@ -119,16 +119,21 @@ library the build needs. Then build the APK the usual way
   with 4 GB+ RAM (the app uses about 1.2 GB while running). Storage: you
   need ~1.5 GB free during import (the zip + the unpacked models); after
   import you can delete the zip and reclaim ~640 MB, leaving ~650 MB in
-  use.
+  use. This applies whether or not you turn on online mode — the app
+  always imports the model pack and loads Qwen on startup, since Whisper
+  and Piper stay on-device either way and switching modes shouldn't need
+  a restart.
 - **Very old phones:** if the app crashes on start, remove
   `GGML_CPU_ARM_ARCH` from `whisper/build.gradle.kts` and
   `llama/build.gradle.kts` and rebuild.
-- **Want different models?** Change the download links in
+- **Want different on-device models?** Change the download links in
   `scripts/fetch_models.sh` and the matching file names in
   `ModelPack.REQUIRED` and `MainActivity.initModels`. For example, a bigger
   Whisper model hears better, and a bigger Qwen model gives smarter
   answers. Also bump `model-pack-v1` → `v2` (and the `.models-v1` marker in
-  `ModelPack.kt`) so phones with the old pack know to re-import.
+  `ModelPack.kt`) so phones with the old pack know to re-import. To use a
+  different *cloud* model instead, no rebuild needed — just change it in
+  Settings (⚙).
 - **Short answers by design:** replies are limited to 512 tokens and the
   model's internal "thinking" text is removed, so answers stay short and
-  natural to listen to.
+  natural to listen to — on-device and online mode alike.
