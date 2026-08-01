@@ -1,73 +1,86 @@
 # Offline Voice Assistant (Android)
 
-A fully on-device voice assistant APK. No server, no internet permission —
-the entire pipeline runs on the phone:
+A voice assistant that runs **completely on your phone**. No server, no
+account, no internet — the app does not even have permission to go online.
+
+You speak → the phone turns your speech into text → a small AI model writes
+a reply → the phone reads the reply out loud. All of it happens on the
+device:
 
 ```
-mic / audio file ──▶ whisper.cpp (STT) ──▶ Qwen3.5-0.8B via llama.cpp ──▶ Piper voice via sherpa-onnx (TTS)
+mic / audio file ──▶ whisper.cpp (speech to text) ──▶ Qwen3.5-0.8B (the "brain") ──▶ Piper (text to speech)
 ```
 
-## Components
+## What's inside
 
-| Stage | Engine | Model | Size |
+| Job | Engine | Model file | Size |
 |---|---|---|---|
-| STT | whisper.cpp `v1.9.1` (JNI, `:whisper`) | `ggml-base.en-q5_1.bin` | ~57 MB |
-| LLM | llama.cpp `b10217` (JNI, `:llama`) | `Qwen3.5-0.8B-Q4_K_M.gguf` | ~600 MB |
-| TTS | sherpa-onnx `1.13.4` (official AAR) | Piper `en_US-amy-low` | ~65 MB |
+| Speech → text | whisper.cpp `v1.9.1` | `ggml-base.en-q5_1.bin` | ~57 MB |
+| Thinking / replies | llama.cpp `b10217` | `Qwen3.5-0.8B-Q4_K_M.gguf` | ~600 MB |
+| Text → speech | sherpa-onnx `1.13.4` | Piper voice `en_US-amy-low` | ~65 MB |
 
-## Thin APK + model pack (the tradeoff we chose)
+## Why the app and the models are two separate downloads
 
-The APK contains only code and native libs (~30 MB). The ~720 MB of models
-ship separately as **`model-pack-v1.zip`**, which you copy to the phone once
-and import via the in-app **Import model pack** button (system file picker →
-unzipped into app-private storage; native code needs real file paths).
+The AI models are big (~700 MB), so they are **not** packed inside the APK.
+Instead you download two things:
 
-Why not bake models into assets? A ~750 MB APK bloats install size (Android
-would hold the assets *and* the unpacked copy, ~1.5 GB), slows first launch,
-and makes the CI artifact painful to download.
+1. **The app** — a small APK (~18 MB download).
+2. **The model pack** — one zip file (`model-pack-v1.zip`, ~640 MB) that you
+   copy to the phone once. The app imports it on first use and never needs
+   it again.
 
-Why not a first-run in-app download? That is smoother UX, but it requires the
-`INTERNET` permission — and "this app *cannot* phone home" is the point of
-the project. We chose to keep the app provably offline: the only permission
-is `RECORD_AUDIO`, and the one-time model download happens outside the app.
+Why this way? Putting the models inside the APK made it a ~700 MB install
+that was slow to download and used double the storage. The other option —
+letting the app download the models itself — would need internet
+permission, and the whole point of this app is that it *cannot* go online.
+So: small app + one manual model download. That is the tradeoff we chose.
 
-`scripts/fetch_models.sh` builds the pack (and fetches the sherpa-onnx AAR
-the build links against); models are never committed to the repo.
+## How to install (from GitHub Actions)
 
-## Getting the APK (GitHub Actions)
+Every push to this repo builds the app automatically.
 
-Every push runs `.github/workflows/build-apk.yml`, which builds `arm64-v8a`
-native code with the NDK and uploads two artifacts.
+1. Open the repo's **Actions** tab → click the latest `build-apk` run.
+2. Download both artifacts at the bottom of the page:
+   - `offline-voice-assistant-debug` — the APK
+   - `model-pack-v1` — the models
+3. Unzip each downloaded file once on your computer. You get
+   `app-debug.apk` and `model-pack-v1.zip`.
+4. Copy `app-debug.apk` to the phone and install it (allow *Install
+   unknown apps* when asked).
+5. Copy `model-pack-v1.zip` to the phone too — USB cable, or
+   `adb push model-pack-v1.zip /sdcard/Download/`.
+6. Open the app, tap **Import model pack**, and pick the zip. The import
+   takes about a minute. After that you can delete the zip from the phone.
+7. Done. Tap **Record**, speak, tap **Stop** — or answer from an audio
+   file with **File**.
 
-1. Push this repo to GitHub, open **Actions** → latest `build-apk` run.
-2. Download both artifacts: `offline-voice-assistant-debug` (~30 MB APK) and
-   `model-pack-v1` (~720 MB; unzip the artifact once on your computer to get
-   the inner `model-pack-v1.zip`).
-3. Copy the APK to the phone, enable *Install unknown apps*, install.
-4. Copy `model-pack-v1.zip` to the phone (USB, `adb push
-   model-pack-v1.zip /sdcard/Download/`, or any file transfer).
-5. Open the app → **Import model pack** → pick the zip (~1 min). After that
-   the zip can be deleted; the app never needs it again. Then: tap
-   **Record**, speak, tap **Stop** — or pick an audio file with **File**.
+## Building it yourself
 
-## Building locally instead
+Open the project in Android Studio on a normal x86_64 computer (the Android
+NDK does not run on arm64 Linux). First run:
 
-Open the project in Android Studio (x86_64 host; the NDK toolchain is not
-available for arm64 Linux hosts), run `bash scripts/fetch_models.sh` first
-(the build needs the AAR it fetches; the model pack lands in `dist/`), then
-`Build → Build APK`.
+```bash
+bash scripts/fetch_models.sh
+```
 
-## Notes / tuning
+This downloads the models, creates `dist/model-pack-v1.zip`, and fetches a
+library the build needs. Then build the APK the usual way
+(`Build → Build APK` or `./gradlew :app:assembleDebug`).
 
-- Native code targets `armv8.2-a+dotprod+fp16` — any 2019+ arm64 phone.
-  For very old devices remove `GGML_CPU_ARM_ARCH` from the two module
-  `build.gradle.kts` files.
-- Swap models by editing `scripts/fetch_models.sh` plus the file names in
-  `ModelPack.REQUIRED` and `MainActivity.initModels` (e.g.
-  `ggml-small.en-q5_1.bin` for better STT, a bigger Qwen quant for better
-  answers, any other Piper voice for TTS). Bump the pack name and the
-  `.models-v1` marker in `ModelPack.kt` so old installs re-import.
-- RAM use is roughly 1.2 GB with everything loaded; a 4 GB+ phone is
-  recommended.
-- Replies are capped at 512 tokens and `<think>` blocks are stripped, keeping
-  answers short and speakable.
+## Good to know
+
+- **Phone requirements:** any 64-bit Android phone from ~2019 or newer,
+  with 4 GB+ RAM (the app uses about 1.2 GB while running) and ~1 GB of
+  free storage for the models.
+- **Very old phones:** if the app crashes on start, remove
+  `GGML_CPU_ARM_ARCH` from `whisper/build.gradle.kts` and
+  `llama/build.gradle.kts` and rebuild.
+- **Want different models?** Change the download links in
+  `scripts/fetch_models.sh` and the matching file names in
+  `ModelPack.REQUIRED` and `MainActivity.initModels`. For example, a bigger
+  Whisper model hears better, and a bigger Qwen model gives smarter
+  answers. Also bump `model-pack-v1` → `v2` (and the `.models-v1` marker in
+  `ModelPack.kt`) so phones with the old pack know to re-import.
+- **Short answers by design:** replies are limited to 512 tokens and the
+  model's internal "thinking" text is removed, so answers stay short and
+  natural to listen to.
