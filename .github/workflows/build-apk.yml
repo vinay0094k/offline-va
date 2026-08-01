@@ -2,12 +2,19 @@ name: build-apk
 
 on:
   push:
+    paths-ignore: ["**.md"]
   workflow_dispatch:
 
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Single-ABI build: arm64-v8a only (abiFilters in the module build files).
+  # No ABI matrix — x86_64 would only matter for emulator use.
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90 # cold NDK/Gradle caches can push past 60
     steps:
       - uses: actions/checkout@v4
 
@@ -20,23 +27,47 @@ jobs:
         uses: actions/cache@v4
         with:
           path: downloads
-          key: models-whisper-base-q51-qwen35-08b-q4km-amy-low-v1
+          # The script pins the download URLs, so hashing it busts the
+          # cache exactly when a model/AAR version changes.
+          key: models-${{ hashFiles('scripts/fetch_models.sh') }}
 
       - name: Fetch models, build model pack, fetch sherpa-onnx AAR
         run: bash scripts/fetch_models.sh
 
-      - uses: gradle/actions/setup-gradle@v4
+      # setup-gradle already caches ~/.gradle (deps, wrapper); this covers
+      # the CMake/NDK object dirs of the two native modules.
+      - name: Cache native builds
+        uses: actions/cache@v4
         with:
-          gradle-version: "8.9"
+          path: |
+            whisper/.cxx
+            llama/.cxx
+          key: cxx-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/*.gradle.kts') }}
+
+      # Caching only; the Gradle version is pinned by the wrapper.
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
 
       - name: Build debug APK
-        run: gradle --no-daemon :app:assembleDebug
+        run: chmod +x ./gradlew && ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Job summary (output sizes)
+        run: |
+          {
+            echo '### Build outputs'
+            echo '```'
+            ls -lh app/build/outputs/apk/debug/app-debug.apk dist/model-pack-v1.zip
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: offline-voice-assistant-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/app-debug.apk # exact name
+          if-no-files-found: error
           retention-days: 14
 
       - name: Upload model pack
@@ -44,5 +75,6 @@ jobs:
         with:
           name: model-pack-v1
           path: dist/model-pack-v1.zip
+          if-no-files-found: error
           compression-level: 0 # already a stored zip of incompressible models
           retention-days: 14

@@ -115,7 +115,7 @@ class MainActivity : AppCompatActivity() {
                 setStatus("Importing model pack…")
                 withContext(Dispatchers.IO) {
                     ModelPack.import(this@MainActivity, uri) { mb ->
-                        scope.launch { setStatus("Importing model pack… $mb MB") }
+                        setStatus("Importing model pack… $mb MB")
                     }
                 }
                 btnImport.visibility = View.GONE
@@ -312,7 +312,8 @@ class MainActivity : AppCompatActivity() {
         track.release()
     }
 
-    private suspend fun setStatus(text: String) = withContext(Dispatchers.Main) {
+    /** Safe from any thread. */
+    private fun setStatus(text: String) = runOnUiThread {
         statusView.text = text
     }
 
