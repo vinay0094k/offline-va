@@ -13,6 +13,13 @@
         android:textStyle="italic"
         android:paddingBottom="8dp" />
 
+    <Button
+        android:id="@+id/btnImport"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:text="📦 Import model pack" />
+
     <ScrollView
         android:id="@+id/chatScroll"
         android:layout_width="match_parent"

@@ -7,6 +7,7 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
@@ -47,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRecord: Button
     private lateinit var btnFile: Button
     private lateinit var btnReset: Button
+    private lateinit var btnImport: Button
 
     private val systemPrompt =
         "You are a helpful voice assistant. Reply in one or two short sentences of " +
@@ -55,6 +57,12 @@ class MainActivity : AppCompatActivity() {
     private val pickAudio =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             if (uri != null) handleFile(uri)
+        }
+
+    // "*/*" because download managers often mislabel the pack's mime type.
+    private val pickPack =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            if (uri != null) importPack(uri)
         }
 
     private val askMic =
@@ -70,8 +78,10 @@ class MainActivity : AppCompatActivity() {
         btnRecord = findViewById(R.id.btnRecord)
         btnFile = findViewById(R.id.btnFile)
         btnReset = findViewById(R.id.btnReset)
+        btnImport = findViewById(R.id.btnImport)
 
         btnRecord.setOnClickListener { toggleRecord() }
+        btnImport.setOnClickListener { if (!busy) pickPack.launch("*/*") }
         btnFile.setOnClickListener { if (ready && !busy) pickAudio.launch("audio/*") }
         btnReset.setOnClickListener {
             history.clear()
@@ -84,15 +94,45 @@ class MainActivity : AppCompatActivity() {
             askMic.launch(Manifest.permission.RECORD_AUDIO)
         }
 
-        scope.launch { initModels() }
+        scope.launch {
+            if (ModelPack.installed(this@MainActivity)) {
+                initModels()
+            } else {
+                btnImport.visibility = View.VISIBLE
+                setStatus(
+                    "Models not installed — download model-pack-v1.zip " +
+                    "(see README), copy it to this phone, then tap Import"
+                )
+            }
+        }
+    }
+
+    private fun importPack(uri: Uri) {
+        scope.launch {
+            busy = true
+            btnImport.isEnabled = false
+            try {
+                setStatus("Importing model pack…")
+                withContext(Dispatchers.IO) {
+                    ModelPack.import(this@MainActivity, uri) { mb ->
+                        scope.launch { setStatus("Importing model pack… $mb MB") }
+                    }
+                }
+                btnImport.visibility = View.GONE
+                busy = false
+                initModels()
+            } catch (e: Exception) {
+                busy = false
+                btnImport.isEnabled = true
+                setStatus("Import failed: ${e.message}")
+            }
+        }
     }
 
     private suspend fun initModels() {
         try {
             withContext(Dispatchers.IO) {
-                setStatus("Unpacking models (first run only)…")
-                Assets.copyModels(this@MainActivity)
-                val base = File(filesDir, "models")
+                val base = ModelPack.dir(this@MainActivity)
 
                 setStatus("Loading Whisper…")
                 whisperCtx = WhisperBridge.initContext(

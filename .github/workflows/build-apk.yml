@@ -22,7 +22,7 @@ jobs:
           path: downloads
           key: models-whisper-base-q51-qwen35-08b-q4km-amy-low-v1
 
-      - name: Fetch models and sherpa-onnx AAR
+      - name: Fetch models, build model pack, fetch sherpa-onnx AAR
         run: bash scripts/fetch_models.sh
 
       - uses: gradle/actions/setup-gradle@v4
@@ -37,4 +37,12 @@ jobs:
         with:
           name: offline-voice-assistant-debug
           path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+      - name: Upload model pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-pack-v1
+          path: dist/model-pack-v1.zip
+          compression-level: 0 # already a stored zip of incompressible models
           retention-days: 14

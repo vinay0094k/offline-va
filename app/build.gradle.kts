@@ -27,12 +27,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-
-    // The bundled models are already compressed formats; storing them
-    // uncompressed keeps APK reads mmap-friendly and packaging fast.
-    androidResources {
-        noCompress += listOf("bin", "gguf", "onnx")
-    }
 }
 
 dependencies {
