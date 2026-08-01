@@ -42,8 +42,4 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     // Renders markdown (bold, lists, code) in assistant chat bubbles.
     implementation("org.commonmark:commonmark:0.24.0")
-    // Encrypts the optional cloud API key at rest (Settings.kt). 1.1.0 is
-    // the version with the MasterKey builder API this code uses — 1.0.0
-    // only has the older MasterKeys API and won't compile against it.
-    implementation("androidx.security:security-crypto:1.1.0")
 }
