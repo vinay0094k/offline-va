@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="screen_bg">#F7F7FB</color>
+    <color name="status_text">#6B6A85</color>
+
+    <color name="brand_primary">#4338CA</color>
+    <color name="brand_on_primary">#FFFFFF</color>
+    <color name="fab_recording">#E53935</color>
+
+    <color name="fab_secondary_bg">#E4E3F0</color>
+    <color name="fab_secondary_fg">#4338CA</color>
+
+    <color name="bubble_user_bg">#4338CA</color>
+    <color name="bubble_user_text">#FFFFFF</color>
+    <color name="bubble_assistant_bg">#EEEDF9</color>
+    <color name="bubble_assistant_text">#1E1B4B</color>
+
+    <color name="banner_bg">#EEF0FF</color>
+    <color name="banner_text">#3730A3</color>
+</resources>

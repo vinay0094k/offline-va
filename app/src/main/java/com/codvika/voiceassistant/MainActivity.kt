@@ -1,15 +1,19 @@
 package com.codvika.voiceassistant
 
 import android.Manifest
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.net.Uri
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,6 +56,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var messagesView: LinearLayout
     private lateinit var chatScroll: ScrollView
     private lateinit var btnRecord: Button
+    private lateinit var recordProgress: ProgressBar
+    private var pulseAnimator: ObjectAnimator? = null
     private lateinit var btnFile: Button
     private lateinit var btnNew: Button
     private lateinit var btnChats: Button
@@ -83,10 +89,13 @@ class MainActivity : AppCompatActivity() {
         messagesView = findViewById(R.id.messagesView)
         chatScroll = findViewById(R.id.chatScroll)
         btnRecord = findViewById(R.id.btnRecord)
+        recordProgress = findViewById(R.id.recordProgress)
         btnFile = findViewById(R.id.btnFile)
         btnNew = findViewById(R.id.btnNew)
         btnChats = findViewById(R.id.btnChats)
         btnImport = findViewById(R.id.btnImport)
+        setFabEnabled(btnRecord, false)
+        setFabEnabled(btnFile, false)
 
         btnRecord.setOnClickListener { toggleRecord() }
         btnImport.setOnClickListener { if (!busy) pickPack.launch("*/*") }
@@ -169,9 +178,9 @@ class MainActivity : AppCompatActivity() {
                 )
             }
             ready = true
-            btnRecord.isEnabled = true
-            btnFile.isEnabled = true
-            setStatus("Ready — tap Record and speak")
+            setFabEnabled(btnRecord, true)
+            setFabEnabled(btnFile, true)
+            setStatus("Ready — tap 🎙 and speak")
         } catch (e: Exception) {
             setStatus("Startup failed: ${e.message}")
         }
@@ -191,14 +200,46 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             isRecording = true
-            btnRecord.text = "■ Stop"
-            setStatus("Listening… tap Stop when done")
+            btnRecord.text = "■"
+            setRecordingUi(true)
+            setStatus("Listening… tap ■ when done")
         } else {
             val pcm = recorder.stop()
             isRecording = false
-            btnRecord.text = "🎙 Record"
+            btnRecord.text = "🎙"
+            setRecordingUi(false)
             scope.launch { runPipeline(pcm) }
         }
+    }
+
+    /** Custom oval backgrounds don't get the automatic disabled tint. */
+    private fun setFabEnabled(button: Button, enabled: Boolean) {
+        button.isEnabled = enabled
+        button.alpha = if (enabled) 1f else 0.4f
+    }
+
+    /** Red background + a slow opacity pulse while the mic is live. */
+    private fun setRecordingUi(recording: Boolean) {
+        if (recording) {
+            btnRecord.background = ContextCompat.getDrawable(this, R.drawable.bg_fab_recording)
+            pulseAnimator = ObjectAnimator.ofFloat(btnRecord, "alpha", 1f, 0.45f).apply {
+                duration = 600
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                start()
+            }
+        } else {
+            pulseAnimator?.cancel()
+            pulseAnimator = null
+            btnRecord.alpha = 1f
+            btnRecord.background = ContextCompat.getDrawable(this, R.drawable.bg_fab_primary)
+        }
+    }
+
+    /** Dims the mic FAB and shows a spinner over it while transcribing/thinking. */
+    private fun setProcessingUi(processing: Boolean) = runOnUiThread {
+        recordProgress.visibility = if (processing) View.VISIBLE else View.GONE
+        btnRecord.alpha = if (processing) 0.35f else 1f
     }
 
     private fun handleFile(uri: Uri) {
@@ -228,6 +269,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         busy = true
+        setProcessingUi(true)
         try {
             setStatus("Transcribing…")
             val text = withContext(Dispatchers.Default) {
@@ -262,6 +304,7 @@ class MainActivity : AppCompatActivity() {
             setStatus("Error: ${e.message}")
         } finally {
             busy = false
+            setProcessingUi(false)
         }
     }
 
@@ -290,7 +333,7 @@ class MainActivity : AppCompatActivity() {
         chatId = null
         history.clear()
         messagesView.removeAllViews()
-        if (ready) setStatus("New chat — tap Record and speak")
+        if (ready) setStatus("New chat — tap 🎙 and speak")
     }
 
     private fun showChats() {
@@ -380,29 +423,55 @@ class MainActivity : AppCompatActivity() {
         statusView.text = text
     }
 
-    /** Adds one message row; assistant rows get a 🔊 button. Any thread. */
+    /**
+     * Adds one chat bubble: user bubbles lean right in brand color, assistant
+     * bubbles lean left in a neutral tone with a 🔊 Speak action. Any thread.
+     * The opposite-side padding on [row] stands in for a bubble max-width.
+     */
     private fun appendChat(who: String, text: String) = runOnUiThread {
+        val isUser = who == "You"
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, dp(12))
+            gravity = if (isUser) Gravity.END else Gravity.START
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(10) }
+            if (isUser) setPadding(dp(48), 0, 0, 0) else setPadding(0, 0, dp(48), 0)
         }
-        row.addView(TextView(this).apply {
-            this.text = "$who: $text"
-            textSize = 16f
+        val bubble = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = ContextCompat.getDrawable(
+                this@MainActivity,
+                if (isUser) R.drawable.bg_bubble_user else R.drawable.bg_bubble_assistant
+            )
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+        }
+        bubble.addView(TextView(this).apply {
+            this.text = text
+            textSize = 15.5f
+            setTextColor(
+                ContextCompat.getColor(
+                    this@MainActivity,
+                    if (isUser) R.color.bubble_user_text else R.color.bubble_assistant_text
+                )
+            )
             setTextIsSelectable(true)
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        if (who == "Assistant") {
-            row.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
-                this.text = "🔊"
+        })
+        if (!isUser) {
+            bubble.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+                this.text = "🔊 Speak"
+                textSize = 13f
+                isAllCaps = false
                 minWidth = 0
                 minimumWidth = 0
-                setPadding(dp(8), 0, dp(8), 0)
+                minHeight = 0
+                minimumHeight = 0
+                setPadding(0, dp(6), 0, 0)
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.brand_primary))
                 setOnClickListener { speak(text) }
-            }, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ))
+            })
         }
+        row.addView(bubble)
         messagesView.addView(row)
         chatScroll.post { chatScroll.fullScroll(ScrollView.FOCUS_DOWN) }
     }
@@ -415,6 +484,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         scope.cancel()
+        pulseAnimator?.cancel()
         if (isRecording) recorder.stop()
         if (whisperCtx != 0L) WhisperBridge.freeContext(whisperCtx)
         LlamaBridge.unload()
