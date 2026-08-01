@@ -3,6 +3,7 @@ package com.codvika.voiceassistant
 import android.Manifest
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
@@ -11,6 +12,7 @@ import android.media.AudioTrack
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
+import android.view.MeasureSpec
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
@@ -21,6 +23,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.text.HtmlCompat
 import com.codvika.llama.LlamaBridge
 import com.codvika.whisper.WhisperBridge
 import com.k2fsa.sherpa.onnx.OfflineTts
@@ -33,8 +36,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.commonmark.parser.Parser
+import org.commonmark.renderer.html.HtmlRenderer
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -79,7 +85,8 @@ class MainActivity : AppCompatActivity() {
 
     private val systemPrompt =
         "You are a helpful voice assistant. Reply in one or two short sentences of " +
-        "plain spoken text. No markdown, no emoji, no lists. /no_think"
+        "spoken text. Use **bold** for key words and short dash lists when useful. " +
+        "No emoji. /no_think"
 
     private val pickAudio =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -400,7 +407,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 setWorking("Speaking…")
                 val audio = withContext(Dispatchers.Default) {
-                    tts!!.generate(text = text.take(500), sid = 0, speed = 1.0f)
+                    tts!!.generate(text = markdownToPlain(text).take(500), sid = 0, speed = 1.0f)
                 }
                 withContext(Dispatchers.IO) { play(audio.samples, audio.sampleRate) }
                 setStatus(if (stopRequested) "Stopped" else "Ready")
@@ -468,13 +475,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Drops thinking tags and trims; Qwen may emit <think>…</think> first. */
+    /**
+     * Drops thinking tags and tidies whitespace. Newlines are kept (only
+     * collapsed runs), so markdown lists and paragraphs render correctly;
+     * Qwen may emit <think>…</think> first.
+     */
     private fun cleanReply(raw: String): String {
         var s = raw.replace(Regex("(?s)<think>.*?</think>"), "")
         if (s.contains("<think>")) s = s.substringBefore("<think>")
-        s = s.replace(Regex("\\s+"), " ").trim()
+        s = s.replace("\r\n", "\n").replace("\r", "\n")
+        s = s.replace(Regex("\\h+"), " ").replace(Regex("\\n{3,}"), "\n\n").trim()
         return s.ifEmpty { "I do not have an answer for that." }
     }
+
+    private val markdownParser: Parser = Parser.builder().build()
+    private val markdownRenderer: HtmlRenderer = HtmlRenderer.builder().build()
+
+    /** Renders markdown (bold, lists, code) to a styled Spanned for bubbles. */
+    private fun renderMarkdown(text: String): CharSequence =
+        HtmlCompat.fromHtml(
+            markdownRenderer.render(markdownParser.parse(text)),
+            HtmlCompat.FROM_HTML_MODE_LEGACY
+        )
+
+    /** Strips markdown so TTS reads plain text, not `**` and list dashes. */
+    private fun markdownToPlain(text: String): String =
+        renderMarkdown(text).toString().trim()
 
     private fun play(samples: FloatArray, sampleRate: Int) {
         val track = AudioTrack.Builder()
@@ -567,7 +593,7 @@ class MainActivity : AppCompatActivity() {
     /**
      * Adds one chat bubble: user bubbles lean right in brand color, assistant
      * bubbles lean left in a neutral tone with a 🔊 Speak action. Any thread.
-     * A real [View.setMaxWidth] caps bubble width so chats stay readable on
+     * Bubbles are capped by [MaxWidthLinearLayout] so chats stay readable on
      * tablets and in landscape, where they'd otherwise stretch full-width.
      */
     private fun appendChat(who: String, text: String) = runOnUiThread {
@@ -579,17 +605,16 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(10) }
         }
-        val bubble = LinearLayout(this).apply {
+        val bubble = MaxWidthLinearLayout(this, dp(360)).apply {
             orientation = LinearLayout.VERTICAL
             background = ContextCompat.getDrawable(
                 this@MainActivity,
                 if (isUser) R.drawable.bg_bubble_user else R.drawable.bg_bubble_assistant
             )
             setPadding(dp(14), dp(10), dp(14), dp(10))
-            maxWidth = dp(360)
         }
         bubble.addView(TextView(this).apply {
-            this.text = text
+            this.text = if (isUser) text else renderMarkdown(text)
             textSize = 15.5f
             setTextColor(
                 ContextCompat.getColor(
@@ -632,5 +657,26 @@ class MainActivity : AppCompatActivity() {
         if (whisperCtx != 0L) WhisperBridge.freeContext(whisperCtx)
         LlamaBridge.unload()
         tts?.release()
+    }
+}
+
+/**
+ * A LinearLayout that never exceeds [maxWidthPx], so chat bubbles stay
+ * readable on tablets and in landscape. Android's View has no max-width
+ * property, so the cap is applied during onMeasure instead.
+ */
+private class MaxWidthLinearLayout(context: Context, private val maxWidthPx: Int) :
+    LinearLayout(context) {
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val size = MeasureSpec.getSize(widthMeasureSpec)
+        if (size > maxWidthPx) {
+            super.onMeasure(
+                MeasureSpec.makeMeasureSpec(maxWidthPx, MeasureSpec.AT_MOST),
+                heightMeasureSpec
+            )
+        } else {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        }
     }
 }
