@@ -5,6 +5,8 @@
 
     <application
         android:label="Offline Voice"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:largeHeap="true"
         android:allowBackup="false"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">

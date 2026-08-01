@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.svg" width="140" alt="Offline Voice Assistant logo — a microphone standing on a chip">
+</p>
+
 # Offline Voice Assistant (Android)
 
 A voice assistant that runs **completely on your phone**. No server, no
