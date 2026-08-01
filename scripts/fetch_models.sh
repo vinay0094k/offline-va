@@ -52,5 +52,7 @@ cp -r downloads/vits-piper-en_US-amy-low/espeak-ng-data     "$STAGE/tts/"
 # keeps packing and the on-phone import fast.
 (cd build/model-pack && zip -0 -r -q ../../dist/model-pack-v1.zip models)
 
+# Real sizes, so the README table can stay honest.
 echo "done:"
-du -sh dist/model-pack-v1.zip app/libs/*.aar
+ls -lh "$STAGE"/whisper/* "$STAGE"/llm/* "$STAGE"/tts/*.onnx
+du -sh "$STAGE"/tts/espeak-ng-data dist/model-pack-v1.zip app/libs/*.aar

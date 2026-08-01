@@ -16,12 +16,13 @@ mic / audio file ──▶ whisper.cpp (speech to text) ──▶ Qwen3.5-0.8B (
 | Job | Engine | Model file | Size |
 |---|---|---|---|
 | Speech → text | whisper.cpp `v1.9.1` | `ggml-base.en-q5_1.bin` | ~57 MB |
-| Thinking / replies | llama.cpp `b10217` | `Qwen3.5-0.8B-Q4_K_M.gguf` | ~600 MB |
+| Thinking / replies | llama.cpp `b10217` | `Qwen3.5-0.8B-Q4_K_M.gguf` | ~508 MB |
 | Text → speech | sherpa-onnx `1.13.4` | Piper voice `en_US-amy-low` | ~65 MB |
 
 ## Why the app and the models are two separate downloads
 
-The AI models are big (~700 MB), so they are **not** packed inside the APK.
+The AI models are big (~640 MB together), so they are **not** packed inside
+the APK.
 Instead you download two things:
 
 1. **The app** — a small APK (~18 MB download).
@@ -29,7 +30,7 @@ Instead you download two things:
    copy to the phone once. The app imports it on first use and never needs
    it again.
 
-Why this way? Putting the models inside the APK made it a ~700 MB install
+Why this way? Putting the models inside the APK made it a ~660 MB install
 that was slow to download and used double the storage. The other option —
 letting the app download the models itself — would need internet
 permission, and the whole point of this app is that it *cannot* go online.
@@ -54,6 +55,9 @@ Every push to this repo builds the app automatically.
 7. Done. Tap **Record**, speak, tap **Stop** — or answer from an audio
    file with **File**.
 
+The app will ask for microphone access (and storage/media access only to
+pick the zip / audio file — via the system file picker, nothing more).
+
 ## Building it yourself
 
 Open the project in Android Studio on a normal x86_64 computer (the Android
@@ -70,8 +74,10 @@ library the build needs. Then build the APK the usual way
 ## Good to know
 
 - **Phone requirements:** any 64-bit Android phone from ~2019 or newer,
-  with 4 GB+ RAM (the app uses about 1.2 GB while running) and ~1 GB of
-  free storage for the models.
+  with 4 GB+ RAM (the app uses about 1.2 GB while running). Storage: you
+  need ~1.5 GB free during import (the zip + the unpacked models); after
+  import you can delete the zip and reclaim ~640 MB, leaving ~650 MB in
+  use.
 - **Very old phones:** if the app crashes on start, remove
   `GGML_CPU_ARM_ARCH` from `whisper/build.gradle.kts` and
   `llama/build.gradle.kts` and rebuild.
