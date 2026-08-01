@@ -76,14 +76,34 @@
             android:maxLines="1"
             android:layout_marginBottom="12dp" />
 
-        <EditText
-            android:id="@+id/inputApiKey"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="API key (blank if the endpoint needs none)"
-            android:inputType="textPassword"
-            android:maxLines="1"
-            android:layout_marginBottom="12dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
+
+            <EditText
+                android:id="@+id/inputApiKey"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="API key (blank if the endpoint needs none)"
+                android:inputType="textPassword"
+                android:maxLines="1" />
+
+            <Button
+                android:id="@+id/btnToggleKey"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Show"
+                android:textSize="13sp"
+                android:minWidth="0dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:contentDescription="Show or hide the API key" />
+        </LinearLayout>
 
         <!-- Editable combo box: shows preset picks on tap, but any model
              slug can still be typed (works with any OpenAI-compatible
@@ -95,7 +115,19 @@
             android:hint="Model, e.g. deepseek/deepseek-v4-flash"
             android:completionThreshold="0"
             android:maxLines="1"
-            android:layout_marginBottom="20dp" />
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btnTest"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_banner"
+            android:textColor="@color/banner_text"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
+            android:text="Test connection"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone" />
 
         <Button
             android:id="@+id/btnSave"

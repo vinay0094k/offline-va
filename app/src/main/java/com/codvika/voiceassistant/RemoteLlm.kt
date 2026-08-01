@@ -20,6 +20,29 @@ object RemoteLlm {
         baseUrl: String, apiKey: String, model: String,
         roles: Array<String>, contents: Array<String>, maxTokens: Int
     ): String {
+        val messages = JSONArray()
+        for (i in roles.indices) {
+            messages.put(JSONObject().put("role", roles[i]).put("content", contents[i]))
+        }
+        val response = request(baseUrl, apiKey, model, messages, maxTokens)
+        val choice = response.getJSONArray("choices").getJSONObject(0)
+        return choice.getJSONObject("message").getString("content")
+    }
+
+    /** Minimal request that verifies the endpoint, auth, and model slug work. */
+    fun test(baseUrl: String, apiKey: String, model: String): String {
+        val messages = JSONArray().put(
+            JSONObject().put("role", "user").put("content", "ping")
+        )
+        request(baseUrl, apiKey, model, messages, 1)
+        return "Connected — server accepted \"$model\""
+    }
+
+    /** One blocking POST to `{baseUrl}/chat/completions`; throws IOException on failure. */
+    private fun request(
+        baseUrl: String, apiKey: String, model: String,
+        messages: JSONArray, maxTokens: Int
+    ): JSONObject {
         val url = URL("$baseUrl/chat/completions")
         val conn = url.openConnection() as HttpURLConnection
         try {
@@ -32,10 +55,6 @@ object RemoteLlm {
                 conn.setRequestProperty("Authorization", "Bearer $apiKey")
             }
 
-            val messages = JSONArray()
-            for (i in roles.indices) {
-                messages.put(JSONObject().put("role", roles[i]).put("content", contents[i]))
-            }
             val body = JSONObject()
                 .put("model", model)
                 .put("messages", messages)
@@ -58,8 +77,7 @@ object RemoteLlm {
                 throw IOException("HTTP $status${if (msg != null) ": $msg" else ""}")
             }
 
-            val choice = JSONObject(text).getJSONArray("choices").getJSONObject(0)
-            return choice.getJSONObject("message").getString("content")
+            return JSONObject(text)
         } finally {
             conn.disconnect()
         }

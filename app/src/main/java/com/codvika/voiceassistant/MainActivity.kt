@@ -29,8 +29,10 @@ import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -45,6 +47,10 @@ class MainActivity : AppCompatActivity() {
     private var busy = false
     private var speaking = false
     private var isRecording = false
+    private var micDenied = false
+    private var speakButton: Button? = null
+    @Volatile private var stopRequested = false
+    @Volatile private var currentTrack: AudioTrack? = null
     private val recorder = AudioRecorder()
 
     /** Full transcript of the open chat: role -> content, no system prompt. */
@@ -54,6 +60,8 @@ class MainActivity : AppCompatActivity() {
     private var chatId: String? = null
 
     private lateinit var statusView: TextView
+    private lateinit var statusSpinner: ProgressBar
+    private lateinit var badgeCloud: TextView
     private lateinit var messagesView: LinearLayout
     private lateinit var chatScroll: ScrollView
     private lateinit var btnRecord: Button
@@ -64,6 +72,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnChats: Button
     private lateinit var btnSettings: Button
     private lateinit var btnImport: Button
+    private lateinit var importProgress: ProgressBar
+    private lateinit var recordingOverlay: View
+    private lateinit var recordTimer: TextView
+    private var recordTimerJob: Job? = null
 
     private val systemPrompt =
         "You are a helpful voice assistant. Reply in one or two short sentences of " +
@@ -81,13 +93,16 @@ class MainActivity : AppCompatActivity() {
         }
 
     private val askMic =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) micDenied()
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         statusView = findViewById(R.id.statusView)
+        statusSpinner = findViewById(R.id.statusSpinner)
         messagesView = findViewById(R.id.messagesView)
         chatScroll = findViewById(R.id.chatScroll)
         btnRecord = findViewById(R.id.btnRecord)
@@ -97,6 +112,11 @@ class MainActivity : AppCompatActivity() {
         btnChats = findViewById(R.id.btnChats)
         btnSettings = findViewById(R.id.btnSettings)
         btnImport = findViewById(R.id.btnImport)
+        badgeCloud = findViewById(R.id.badgeCloud)
+        importProgress = findViewById(R.id.importProgress)
+        recordingOverlay = findViewById(R.id.recordingOverlay)
+        recordTimer = findViewById(R.id.recordTimer)
+        updateOnlineBadge()
         setFabEnabled(btnRecord, false)
         setFabEnabled(btnFile, false)
 
@@ -128,24 +148,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Re-evaluates the online badge after returning from Settings. */
+    override fun onResume() {
+        super.onResume()
+        updateOnlineBadge()
+    }
+
     private fun importPack(uri: Uri) {
         scope.launch {
             busy = true
             btnImport.isEnabled = false
+            importProgress.visibility = View.VISIBLE
+            importProgress.progress = 0
             try {
-                setStatus("Importing model pack…")
+                setWorking("Importing model pack…")
                 withContext(Dispatchers.IO) {
-                    ModelPack.import(this@MainActivity, uri) { mb ->
-                        setStatus("Importing model pack… $mb MB")
+                    ModelPack.import(this@MainActivity, uri) { fraction ->
+                        val percent = (fraction * 100).toInt().coerceIn(0, 100)
+                        setWorking("Importing model pack… $percent%")
+                        runOnUiThread { importProgress.progress = percent }
                     }
                 }
+                importProgress.visibility = View.GONE
                 btnImport.visibility = View.GONE
                 busy = false
                 initModels()
             } catch (e: Exception) {
                 busy = false
+                importProgress.visibility = View.GONE
                 btnImport.isEnabled = true
-                setStatus("Import failed: ${e.message}")
+                showError("Import failed: ${e.message}")
             }
         }
     }
@@ -155,20 +187,20 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.IO) {
                 val base = ModelPack.dir(this@MainActivity)
 
-                setStatus("Loading Whisper…")
+                setWorking("Loading Whisper…")
                 whisperCtx = WhisperBridge.initContext(
                     File(base, "whisper/ggml-base.en-q5_1.bin").absolutePath
                 )
                 check(whisperCtx != 0L) { "Whisper model failed to load" }
 
-                setStatus("Loading Qwen…")
+                setWorking("Loading Qwen…")
                 val ok = LlamaBridge.loadModel(
                     File(base, "llm/qwen3.5-0.8b-q4_k_m.gguf").absolutePath,
                     numThreads(), 4096
                 )
                 check(ok) { "Qwen model failed to load" }
 
-                setStatus("Loading TTS voice…")
+                setWorking("Loading TTS voice…")
                 val ttsDir = File(base, "tts")
                 tts = OfflineTts(
                     config = OfflineTtsConfig(
@@ -188,7 +220,7 @@ class MainActivity : AppCompatActivity() {
             setFabEnabled(btnFile, true)
             setStatus("Ready — tap 🎙 and speak")
         } catch (e: Exception) {
-            setStatus("Startup failed: ${e.message}")
+            showError("Startup failed: ${e.message}")
         }
     }
 
@@ -198,7 +230,7 @@ class MainActivity : AppCompatActivity() {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED
             ) {
-                askMic.launch(Manifest.permission.RECORD_AUDIO)
+                if (micDenied) micDenied() else askMic.launch(Manifest.permission.RECORD_AUDIO)
                 return
             }
             if (!recorder.start()) {
@@ -208,14 +240,38 @@ class MainActivity : AppCompatActivity() {
             isRecording = true
             btnRecord.text = "■"
             setRecordingUi(true)
+            startRecordTimer()
             setStatus("Listening… tap ■ when done")
         } else {
             val pcm = recorder.stop()
             isRecording = false
             btnRecord.text = "🎙"
             setRecordingUi(false)
+            stopRecordTimer()
             scope.launch { runPipeline(pcm) }
         }
+    }
+
+    /** Dims the screen and shows a live "● Recording 0:07" chip while the mic is on. */
+    private fun startRecordTimer() {
+        val start = System.currentTimeMillis()
+        recordingOverlay.visibility = View.VISIBLE
+        recordTimer.visibility = View.VISIBLE
+        recordTimer.text = "● 0:00"
+        recordTimerJob = scope.launch {
+            while (isActive) {
+                val secs = ((System.currentTimeMillis() - start) / 1000).toInt()
+                recordTimer.text = "● %d:%02d".format(secs / 60, secs % 60)
+                delay(200)
+            }
+        }
+    }
+
+    private fun stopRecordTimer() {
+        recordTimerJob?.cancel()
+        recordTimerJob = null
+        recordingOverlay.visibility = View.GONE
+        recordTimer.visibility = View.GONE
     }
 
     /** Custom oval backgrounds don't get the automatic disabled tint. */
@@ -250,18 +306,20 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleFile(uri: Uri) {
         scope.launch {
-            setStatus("Decoding audio file…")
+            setWorking("Decoding audio file…")
             busy = true
+            var error: String? = null
             val pcm = withContext(Dispatchers.IO) {
                 try {
                     AudioDecoder.decodeToMono16k(this@MainActivity, uri)
                 } catch (e: Exception) {
+                    error = e.message
                     null
                 }
             }
             busy = false
             if (pcm == null) {
-                setStatus("Could not decode that file")
+                showError(error ?: "Could not decode that audio file. Try WAV, MP3, M4A, OGG, or FLAC.")
             } else {
                 runPipeline(pcm)
             }
@@ -277,7 +335,7 @@ class MainActivity : AppCompatActivity() {
         busy = true
         setProcessingUi(true)
         try {
-            setStatus("Transcribing…")
+            setWorking("Transcribing…")
             val text = withContext(Dispatchers.Default) {
                 WhisperBridge.transcribe(whisperCtx, pcm, numThreads())
             }.trim()
@@ -291,7 +349,7 @@ class MainActivity : AppCompatActivity() {
             // Prompt window stays small; the stored chat keeps everything.
             val msgs = listOf("system" to systemPrompt) + history.takeLast(10)
             val online = Settings.onlineEnabled(this) && Settings.isConfigured(this)
-            setStatus(if (online) "Thinking… (cloud)" else "Thinking…")
+            setWorking(if (online) "Thinking… (cloud)" else "Thinking…")
             val raw = if (online) {
                 withContext(Dispatchers.IO) {
                     RemoteLlm.chat(
@@ -321,31 +379,46 @@ class MainActivity : AppCompatActivity() {
             saveChat()
             setStatus("Ready — tap 🔊 to hear the answer")
         } catch (e: Exception) {
-            setStatus("Error: ${e.message}")
+            showError("Error: ${e.message}")
         } finally {
             busy = false
             setProcessingUi(false)
         }
     }
 
-    /** Speaks one message; triggered by the 🔊 button, never automatically. */
-    private fun speak(text: String) {
-        if (!ready || speaking) return
+    /** Speaks one message; tap the same button again to stop playback. */
+    private fun speak(text: String, button: Button) {
+        if (!ready) return
+        if (speaking) {
+            stopSpeaking()
+            return
+        }
         speaking = true
+        speakButton = button
+        button.text = "■ Stop"
         scope.launch {
             try {
-                setStatus("Speaking…")
+                setWorking("Speaking…")
                 val audio = withContext(Dispatchers.Default) {
                     tts!!.generate(text = text.take(500), sid = 0, speed = 1.0f)
                 }
                 withContext(Dispatchers.IO) { play(audio.samples, audio.sampleRate) }
-                setStatus("Ready")
+                setStatus(if (stopRequested) "Stopped" else "Ready")
             } catch (e: Exception) {
                 setStatus("TTS error: ${e.message}")
             } finally {
                 speaking = false
+                stopRequested = false
+                speakButton?.setText("🔊 Speak")
+                speakButton = null
             }
         }
+    }
+
+    /** Requests playback to stop; the running play() loop exits promptly. */
+    private fun stopSpeaking() {
+        stopRequested = true
+        currentTrack?.stop()
     }
 
     private fun newChat() {
@@ -425,9 +498,11 @@ class MainActivity : AppCompatActivity() {
                 ) * 2
             )
             .build()
+        currentTrack = track
+        stopRequested = false
         track.play()
         var offset = 0
-        while (offset < samples.size) {
+        while (offset < samples.size && !stopRequested) {
             val written = track.write(
                 samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING
             )
@@ -436,17 +511,64 @@ class MainActivity : AppCompatActivity() {
         }
         track.stop()
         track.release()
+        currentTrack = null
     }
 
-    /** Safe from any thread. */
+    /** Sets idle status text; hides the inline working spinner. Safe from any thread. */
     private fun setStatus(text: String) = runOnUiThread {
         statusView.text = text
+        statusSpinner.visibility = View.GONE
+    }
+
+    /** Sets status text during a long-running stage and shows the inline spinner. */
+    private fun setWorking(text: String) = runOnUiThread {
+        statusView.text = text
+        statusSpinner.visibility = View.VISIBLE
+    }
+
+    /** Errors can overflow the two-line status bar, so surface them in a dialog. */
+    private fun showError(message: String) = runOnUiThread {
+        statusView.text = message
+        statusSpinner.visibility = View.GONE
+        AlertDialog.Builder(this)
+            .setTitle("Error")
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    /** Shown once the user has declined the mic; offers a shortcut to app settings. */
+    private fun micDenied() {
+        micDenied = true
+        AlertDialog.Builder(this)
+            .setTitle("Microphone permission needed")
+            .setMessage(
+                "Recording your voice needs the microphone. " +
+                "Open system settings to grant it, then come back."
+            )
+            .setPositiveButton("Open Settings") { _, _ ->
+                startActivity(
+                    Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+            .setNegativeButton("Not now", null)
+            .show()
+    }
+
+    /** Persistent "☁ online" badge whenever online mode is active and configured. */
+    private fun updateOnlineBadge() {
+        val online = Settings.onlineEnabled(this) && Settings.isConfigured(this)
+        badgeCloud.visibility = if (online) View.VISIBLE else View.GONE
     }
 
     /**
      * Adds one chat bubble: user bubbles lean right in brand color, assistant
      * bubbles lean left in a neutral tone with a 🔊 Speak action. Any thread.
-     * The opposite-side padding on [row] stands in for a bubble max-width.
+     * A real [View.setMaxWidth] caps bubble width so chats stay readable on
+     * tablets and in landscape, where they'd otherwise stretch full-width.
      */
     private fun appendChat(who: String, text: String) = runOnUiThread {
         val isUser = who == "You"
@@ -456,7 +578,6 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(10) }
-            if (isUser) setPadding(dp(48), 0, 0, 0) else setPadding(0, 0, dp(48), 0)
         }
         val bubble = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -465,6 +586,7 @@ class MainActivity : AppCompatActivity() {
                 if (isUser) R.drawable.bg_bubble_user else R.drawable.bg_bubble_assistant
             )
             setPadding(dp(14), dp(10), dp(14), dp(10))
+            maxWidth = dp(360)
         }
         bubble.addView(TextView(this).apply {
             this.text = text
@@ -488,7 +610,7 @@ class MainActivity : AppCompatActivity() {
                 minimumHeight = 0
                 setPadding(0, dp(6), 0, 0)
                 setTextColor(ContextCompat.getColor(this@MainActivity, R.color.brand_primary))
-                setOnClickListener { speak(text) }
+                setOnClickListener { speak(text, this) }
             })
         }
         row.addView(bubble)
@@ -506,6 +628,7 @@ class MainActivity : AppCompatActivity() {
         scope.cancel()
         pulseAnimator?.cancel()
         if (isRecording) recorder.stop()
+        if (speaking) stopSpeaking()
         if (whisperCtx != 0L) WhisperBridge.freeContext(whisperCtx)
         LlamaBridge.unload()
         tts?.release()

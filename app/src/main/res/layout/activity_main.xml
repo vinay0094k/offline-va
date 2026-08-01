@@ -18,6 +18,14 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
+            <ProgressBar
+                android:id="@+id/statusSpinner"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_marginEnd="6dp"
+                android:indeterminateTint="@color/status_text"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/statusView"
                 android:layout_width="0dp"
@@ -29,6 +37,22 @@
                 android:textColor="@color/status_text"
                 android:maxLines="2"
                 android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/badgeCloud"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_badge"
+                android:text="☁ online"
+                android:textSize="11sp"
+                android:textColor="@color/badge_text"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp"
+                android:visibility="gone"
+                android:layout_marginEnd="6dp"
+                android:contentDescription="Online mode is on — questions are sent to your cloud endpoint" />
 
             <Button
                 android:id="@+id/btnNew"
@@ -79,6 +103,14 @@
             android:paddingBottom="14dp"
             android:text="📦 Import model pack" />
 
+        <ProgressBar
+            android:id="@+id/importProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:visibility="gone" />
+
         <ScrollView
             android:id="@+id/chatScroll"
             android:layout_width="match_parent"
@@ -96,6 +128,32 @@
                 android:paddingBottom="88dp" />
         </ScrollView>
     </LinearLayout>
+
+    <!-- Dims the whole screen while recording so stray taps don't hit chats;
+         the FAB cluster stays above it so ■ remains reachable to stop. -->
+    <View
+        android:id="@+id/recordingOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:visibility="gone" />
+
+    <!-- Centered "● Recording 0:07" chip on top of the overlay. -->
+    <TextView
+        android:id="@+id/recordTimer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_banner"
+        android:text="● 0:00"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="@color/fab_recording"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone" />
 
     <!-- Floating action cluster: file-import (small) + record (primary), bottom-right. -->
     <LinearLayout

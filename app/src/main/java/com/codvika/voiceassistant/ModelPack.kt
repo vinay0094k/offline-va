@@ -2,10 +2,10 @@ package com.codvika.voiceassistant
 
 import android.content.Context
 import android.net.Uri
-import java.io.BufferedInputStream
 import java.io.File
 import java.io.IOException
-import java.util.zip.ZipInputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 
 /**
  * Installs the model pack into filesDir/models. The APK ships without models
@@ -33,9 +33,9 @@ object ModelPack {
     /**
      * Streams the picked zip into filesDir/models. Throws IOException with a
      * user-readable message on bad input; a failed import leaves no partial
-     * install behind.
+     * install behind. [onProgress] reports a 0..1 fraction.
      */
-    fun import(context: Context, uri: Uri, onProgress: (mbSoFar: Long) -> Unit) {
+    fun import(context: Context, uri: Uri, onProgress: (fraction: Float) -> Unit) {
         val target = dir(context)
         target.deleteRecursively()
         target.mkdirs()
@@ -59,41 +59,57 @@ object ModelPack {
     }
 
     private fun unzip(
-        context: Context, uri: Uri, target: File, onProgress: (Long) -> Unit
+        context: Context, uri: Uri, target: File, onProgress: (Float) -> Unit
     ) {
         val targetPrefix = target.canonicalPath + File.separator
-        val buf = ByteArray(1 shl 20)
-        var written = 0L
-        var lastReport = 0L
-        val raw = context.contentResolver.openInputStream(uri)
+        val pfd = context.contentResolver.openFileDescriptor(uri, "r")
             ?: throw IOException("cannot open the picked file")
-        ZipInputStream(BufferedInputStream(raw)).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                // The pack is rooted at models/; tolerate a bare layout too.
-                val name = entry.name.removePrefix("models/")
-                if (name.isEmpty()) continue
-                val out = File(target, name)
-                if (!out.canonicalPath.startsWith(targetPrefix)) {
-                    throw IOException("unsafe zip entry: ${entry.name}")
+        pfd.use { fd ->
+            // ZipFile reads the central directory, so entry sizes are exact
+            // (unlike ZipInputStream, where data-descriptor entries read 0).
+            ZipFile(fd.fileDescriptor).use { zip ->
+                var total = 0L
+                val sizes = zip.entries()
+                while (sizes.hasMoreElements()) {
+                    val entry = sizes.nextElement()
+                    if (!entry.isDirectory) total += entry.size
                 }
-                if (entry.isDirectory) {
-                    out.mkdirs()
-                    continue
-                }
-                out.parentFile?.mkdirs()
-                out.outputStream().use { o ->
-                    while (true) {
-                        val n = zip.read(buf)
-                        if (n < 0) break
-                        o.write(buf, 0, n)
-                        written += n
-                        if (written - lastReport >= 32L shl 20) {
-                            lastReport = written
-                            onProgress(written shr 20)
+                if (total <= 0L) throw IOException("empty model pack")
+
+                var written = 0L
+                var lastReport = 0L
+                val buf = ByteArray(1 shl 20)
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val entry: ZipEntry = entries.nextElement()
+                    // The pack is rooted at models/; tolerate a bare layout too.
+                    val name = entry.name.removePrefix("models/")
+                    if (name.isEmpty()) continue
+                    val out = File(target, name)
+                    if (!out.canonicalPath.startsWith(targetPrefix)) {
+                        throw IOException("unsafe zip entry: ${entry.name}")
+                    }
+                    if (entry.isDirectory) {
+                        out.mkdirs()
+                        continue
+                    }
+                    out.parentFile?.mkdirs()
+                    zip.getInputStream(entry).use { input ->
+                        out.outputStream().use { o ->
+                            while (true) {
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                o.write(buf, 0, n)
+                                written += n
+                                if (written - lastReport >= 32L shl 20) {
+                                    lastReport = written
+                                    onProgress(written.toFloat() / total)
+                                }
+                            }
                         }
                     }
                 }
+                onProgress(1f)
             }
         }
     }

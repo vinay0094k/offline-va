@@ -16,4 +16,7 @@
 
     <color name="banner_bg">#232244</color>
     <color name="banner_text">#A5B4FC</color>
+
+    <color name="badge_bg">#2A2950</color>
+    <color name="badge_text">#A5B4FC</color>
 </resources>
