@@ -55,7 +55,10 @@ mind the request leaving the phone.
 
 - Works with any OpenAI-compatible `/chat/completions` endpoint: OpenAI
   itself, most third-party providers, or a self-hosted server (LM Studio,
-  Ollama's compat layer, vLLM, etc.) — whatever you point it at.
+  Ollama's compat layer, vLLM, etc.) — whatever you point it at. The Model
+  field is a tap-to-pick dropdown with two OpenRouter presets
+  (`deepseek/deepseek-v4-flash`, `amazon/nova-micro-v1`, base URL
+  `https://openrouter.ai/api/v1`) but stays free-text for anything else.
 - The API key is stored encrypted on the phone (`EncryptedSharedPreferences`)
   and is only ever sent to the endpoint you configured.
 - Speech-to-text (Whisper) and text-to-speech (Piper) always stay on-device

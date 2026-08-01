@@ -85,11 +85,15 @@
             android:maxLines="1"
             android:layout_marginBottom="12dp" />
 
-        <EditText
+        <!-- Editable combo box: shows preset picks on tap, but any model
+             slug can still be typed (works with any OpenAI-compatible
+             endpoint, not just the presets). -->
+        <AutoCompleteTextView
             android:id="@+id/inputModel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Model, e.g. gpt-4o-mini"
+            android:hint="Model, e.g. deepseek/deepseek-v4-flash"
+            android:completionThreshold="0"
             android:maxLines="1"
             android:layout_marginBottom="20dp" />
 

@@ -1,6 +1,8 @@
 package com.codvika.voiceassistant
 
 import android.os.Bundle
+import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Switch
@@ -9,6 +11,12 @@ import androidx.appcompat.app.AppCompatActivity
 
 class SettingsActivity : AppCompatActivity() {
 
+    /** Common OpenRouter model slugs; the field stays free-text for anything else. */
+    private val modelPresets = arrayOf(
+        "deepseek/deepseek-v4-flash",
+        "amazon/nova-micro-v1"
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
@@ -16,12 +24,18 @@ class SettingsActivity : AppCompatActivity() {
         val switchOnline = findViewById<Switch>(R.id.switchOnline)
         val inputBaseUrl = findViewById<EditText>(R.id.inputBaseUrl)
         val inputApiKey = findViewById<EditText>(R.id.inputApiKey)
-        val inputModel = findViewById<EditText>(R.id.inputModel)
+        val inputModel = findViewById<AutoCompleteTextView>(R.id.inputModel)
+        inputModel.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, modelPresets)
+        )
+        inputModel.setOnClickListener { inputModel.showDropDown() }
+        inputModel.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) inputModel.showDropDown() }
 
         switchOnline.isChecked = Settings.onlineEnabled(this)
         inputBaseUrl.setText(Settings.baseUrl(this))
         inputApiKey.setText(Settings.apiKey(this))
-        inputModel.setText(Settings.model(this))
+        // filter=false: populate without popping the suggestion dropdown open.
+        inputModel.setText(Settings.model(this), false)
 
         findViewById<Button>(R.id.btnBack).setOnClickListener { finish() }
 
