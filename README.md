@@ -81,11 +81,13 @@ Every push to this repo builds the app automatically.
    `adb push model-pack-v1.zip /sdcard/Download/`.
 6. Open the app, tap **Import model pack**, and pick the zip. The import
    takes about a minute. After that you can delete the zip from the phone.
-7. Done. Tap **Record**, speak, tap **Stop** — or answer from an audio
-   file with **File**. The reply appears as text; tap **🔊** next to it to
-   hear it spoken. **＋ New chat** starts a fresh conversation and
-   **☰ Chats** reopens old ones — chats are saved only on your phone, in
-   the app's private storage.
+7. Done. Tap the floating **🎙** button (bottom-right), speak, tap it again
+   (now **■**) to stop — or answer from an audio file with the smaller
+   **📁** button beside it. The reply appears as a chat bubble; tap
+   **🔊 Speak** on it to hear it out loud. In the top bar: **＋** starts a
+   new chat, **☰** reopens old ones (saved only on your phone, in the
+   app's private storage), and **⚙** opens Settings for the optional
+   online mode above.
 
 The app will ask for microphone access (and storage/media access only to
 pick the zip / audio file — via the system file picker, nothing more). It
