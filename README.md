@@ -57,7 +57,10 @@ Every push to this repo builds the app automatically.
 6. Open the app, tap **Import model pack**, and pick the zip. The import
    takes about a minute. After that you can delete the zip from the phone.
 7. Done. Tap **Record**, speak, tap **Stop** — or answer from an audio
-   file with **File**.
+   file with **File**. The reply appears as text; tap **🔊** next to it to
+   hear it spoken. **＋ New chat** starts a fresh conversation and
+   **☰ Chats** reopens old ones — chats are saved only on your phone, in
+   the app's private storage.
 
 The app will ask for microphone access (and storage/media access only to
 pick the zip / audio file — via the system file picker, nothing more).

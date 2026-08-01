@@ -27,13 +27,11 @@
         android:layout_weight="1"
         android:fillViewport="true">
 
-        <TextView
-            android:id="@+id/chatView"
+        <LinearLayout
+            android:id="@+id/messagesView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textIsSelectable="true"
-            android:textSize="16sp"
-            android:lineSpacingExtra="4dp" />
+            android:orientation="vertical" />
     </ScrollView>
 
     <LinearLayout
@@ -58,13 +56,26 @@
             android:layout_marginStart="8dp"
             android:enabled="false"
             android:text="📁 File" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
 
         <Button
-            android:id="@+id/btnReset"
+            android:id="@+id/btnNew"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="＋ New chat" />
+
+        <Button
+            android:id="@+id/btnChats"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
-            android:text="Reset" />
+            android:text="☰ Chats" />
     </LinearLayout>
 </LinearLayout>

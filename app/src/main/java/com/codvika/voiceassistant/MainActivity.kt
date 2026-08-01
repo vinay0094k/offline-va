@@ -9,9 +9,11 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.codvika.llama.LlamaBridge
@@ -36,18 +38,23 @@ class MainActivity : AppCompatActivity() {
     private var tts: OfflineTts? = null
     private var ready = false
     private var busy = false
+    private var speaking = false
     private var isRecording = false
     private val recorder = AudioRecorder()
 
-    /** role -> content, without the system prompt. */
+    /** Full transcript of the open chat: role -> content, no system prompt. */
     private val history = ArrayList<Pair<String, String>>()
 
+    /** File id of the open chat in ChatStore; null until the first exchange. */
+    private var chatId: String? = null
+
     private lateinit var statusView: TextView
-    private lateinit var chatView: TextView
+    private lateinit var messagesView: LinearLayout
     private lateinit var chatScroll: ScrollView
     private lateinit var btnRecord: Button
     private lateinit var btnFile: Button
-    private lateinit var btnReset: Button
+    private lateinit var btnNew: Button
+    private lateinit var btnChats: Button
     private lateinit var btnImport: Button
 
     private val systemPrompt =
@@ -73,20 +80,19 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         statusView = findViewById(R.id.statusView)
-        chatView = findViewById(R.id.chatView)
+        messagesView = findViewById(R.id.messagesView)
         chatScroll = findViewById(R.id.chatScroll)
         btnRecord = findViewById(R.id.btnRecord)
         btnFile = findViewById(R.id.btnFile)
-        btnReset = findViewById(R.id.btnReset)
+        btnNew = findViewById(R.id.btnNew)
+        btnChats = findViewById(R.id.btnChats)
         btnImport = findViewById(R.id.btnImport)
 
         btnRecord.setOnClickListener { toggleRecord() }
         btnImport.setOnClickListener { if (!busy) pickPack.launch("*/*") }
         btnFile.setOnClickListener { if (ready && !busy) pickAudio.launch("audio/*") }
-        btnReset.setOnClickListener {
-            history.clear()
-            chatView.text = ""
-        }
+        btnNew.setOnClickListener { newChat() }
+        btnChats.setOnClickListener { showChats() }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
@@ -235,8 +241,8 @@ class MainActivity : AppCompatActivity() {
 
             setStatus("Thinking…")
             history.add("user" to text)
-            trimHistory()
-            val msgs = listOf("system" to systemPrompt) + history
+            // Prompt window stays small; the stored chat keeps everything.
+            val msgs = listOf("system" to systemPrompt) + history.takeLast(10)
             val raw = withContext(Dispatchers.Default) {
                 String(
                     LlamaBridge.chat(
@@ -250,17 +256,79 @@ class MainActivity : AppCompatActivity() {
             val reply = cleanReply(raw)
             history.add("assistant" to reply)
             appendChat("Assistant", reply)
-
-            setStatus("Speaking…")
-            val audio = withContext(Dispatchers.Default) {
-                tts!!.generate(text = reply.take(500), sid = 0, speed = 1.0f)
-            }
-            withContext(Dispatchers.IO) { play(audio.samples, audio.sampleRate) }
-            setStatus("Ready")
+            saveChat()
+            setStatus("Ready — tap 🔊 to hear the answer")
         } catch (e: Exception) {
             setStatus("Error: ${e.message}")
         } finally {
             busy = false
+        }
+    }
+
+    /** Speaks one message; triggered by the 🔊 button, never automatically. */
+    private fun speak(text: String) {
+        if (!ready || speaking) return
+        speaking = true
+        scope.launch {
+            try {
+                setStatus("Speaking…")
+                val audio = withContext(Dispatchers.Default) {
+                    tts!!.generate(text = text.take(500), sid = 0, speed = 1.0f)
+                }
+                withContext(Dispatchers.IO) { play(audio.samples, audio.sampleRate) }
+                setStatus("Ready")
+            } catch (e: Exception) {
+                setStatus("TTS error: ${e.message}")
+            } finally {
+                speaking = false
+            }
+        }
+    }
+
+    private fun newChat() {
+        if (busy) return
+        chatId = null
+        history.clear()
+        messagesView.removeAllViews()
+        if (ready) setStatus("New chat — tap Record and speak")
+    }
+
+    private fun showChats() {
+        if (busy) return
+        val chats = ChatStore.list(this)
+        if (chats.isEmpty()) {
+            setStatus("No saved chats yet")
+            return
+        }
+        val labels = chats.map { it.title }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Chats (saved on this phone only)")
+            .setItems(labels) { _, i -> openChat(chats[i].id) }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun openChat(id: String) {
+        val msgs = ChatStore.load(this, id) ?: run {
+            setStatus("Could not open that chat")
+            return
+        }
+        chatId = id
+        history.clear()
+        history.addAll(msgs)
+        messagesView.removeAllViews()
+        for ((role, content) in msgs) {
+            appendChat(if (role == "user") "You" else "Assistant", content)
+        }
+    }
+
+    private suspend fun saveChat() {
+        val id = chatId ?: System.currentTimeMillis().toString().also { chatId = it }
+        val title = history.firstOrNull { it.first == "user" }
+            ?.second?.take(40) ?: "Chat"
+        val snapshot = history.toList()
+        withContext(Dispatchers.IO) {
+            ChatStore.save(this@MainActivity, id, title, snapshot)
         }
     }
 
@@ -270,11 +338,6 @@ class MainActivity : AppCompatActivity() {
         if (s.contains("<think>")) s = s.substringBefore("<think>")
         s = s.replace(Regex("\\s+"), " ").trim()
         return s.ifEmpty { "I do not have an answer for that." }
-    }
-
-    /** Keeps the prompt small: last 10 turns only. */
-    private fun trimHistory() {
-        while (history.size > 10) history.removeAt(0)
     }
 
     private fun play(samples: FloatArray, sampleRate: Int) {
@@ -317,11 +380,34 @@ class MainActivity : AppCompatActivity() {
         statusView.text = text
     }
 
-    private suspend fun appendChat(who: String, text: String) =
-        withContext(Dispatchers.Main) {
-            chatView.append("$who: $text\n\n")
-            chatScroll.post { chatScroll.fullScroll(ScrollView.FOCUS_DOWN) }
+    /** Adds one message row; assistant rows get a 🔊 button. Any thread. */
+    private fun appendChat(who: String, text: String) = runOnUiThread {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(12))
         }
+        row.addView(TextView(this).apply {
+            this.text = "$who: $text"
+            textSize = 16f
+            setTextIsSelectable(true)
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        if (who == "Assistant") {
+            row.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+                this.text = "🔊"
+                minWidth = 0
+                minimumWidth = 0
+                setPadding(dp(8), 0, dp(8), 0)
+                setOnClickListener { speak(text) }
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        messagesView.addView(row)
+        chatScroll.post { chatScroll.fullScroll(ScrollView.FOCUS_DOWN) }
+    }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun numThreads() =
         Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
