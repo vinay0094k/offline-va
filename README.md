@@ -4,12 +4,15 @@
 
 # Offline Voice Assistant (Android)
 
-A voice assistant that runs **completely on your phone**. No server, no
-account, no internet — the app does not even have permission to go online.
+A voice assistant that runs **completely on your phone by default**. No
+server, no account required — everything works with the phone in airplane
+mode. An optional **online mode** (off unless you turn it on) can send your
+questions to a cloud API you configure yourself, if you'd rather use a
+bigger model than the phone can run. See "Optional: online mode" below.
 
 You speak → the phone turns your speech into text → a small AI model writes
 a reply → the phone reads the reply out loud. All of it happens on the
-device:
+device by default:
 
 ```
 mic / audio file ──▶ whisper.cpp (speech to text) ──▶ Qwen3.5-0.8B (the "brain") ──▶ Piper (text to speech)
@@ -35,10 +38,29 @@ Instead you download two things:
    it again.
 
 Why this way? Putting the models inside the APK made it a ~660 MB install
-that was slow to download and used double the storage. The other option —
-letting the app download the models itself — would need internet
-permission, and the whole point of this app is that it *cannot* go online.
-So: small app + one manual model download. That is the tradeoff we chose.
+that was slow to download and used double the storage. Letting the app
+download the models itself on first run was the other option, but that
+would tie normal setup to having internet at that exact moment. So: small
+app + one manual model download, and the on-device pipeline itself never
+touches the network. That is the tradeoff we chose.
+
+## Optional: online mode
+
+The app requests the `INTERNET` permission because of one opt-in feature:
+**Settings (⚙) → Use a cloud model**. Off by default. When you turn it on
+and fill in a base URL + model (and an API key, if the endpoint needs one),
+your questions go to that endpoint instead of the on-device Qwen model —
+useful if you want sharper answers than a 0.8B model can give and don't
+mind the request leaving the phone.
+
+- Works with any OpenAI-compatible `/chat/completions` endpoint: OpenAI
+  itself, most third-party providers, or a self-hosted server (LM Studio,
+  Ollama's compat layer, vLLM, etc.) — whatever you point it at.
+- The API key is stored encrypted on the phone (`EncryptedSharedPreferences`)
+  and is only ever sent to the endpoint you configured.
+- Speech-to-text (Whisper) and text-to-speech (Piper) always stay on-device
+  either way — online mode only replaces the "thinking" step.
+- Turn it back off any time and the app returns to fully offline.
 
 ## How to install (from GitHub Actions)
 
@@ -63,7 +85,9 @@ Every push to this repo builds the app automatically.
    the app's private storage.
 
 The app will ask for microphone access (and storage/media access only to
-pick the zip / audio file — via the system file picker, nothing more).
+pick the zip / audio file — via the system file picker, nothing more). It
+also declares the internet permission for the optional online mode above,
+but makes no network calls unless you turn that on yourself.
 
 ## Building it yourself
 

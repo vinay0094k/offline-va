@@ -53,6 +53,18 @@
                 android:textSize="18sp"
                 android:contentDescription="Chat history"
                 android:text="☰" />
+
+            <Button
+                android:id="@+id/btnSettings"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="0dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:textSize="18sp"
+                android:contentDescription="Settings"
+                android:text="⚙" />
         </LinearLayout>
 
         <Button

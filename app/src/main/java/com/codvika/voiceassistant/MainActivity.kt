@@ -3,6 +3,7 @@ package com.codvika.voiceassistant
 import android.Manifest
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -61,6 +62,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnFile: Button
     private lateinit var btnNew: Button
     private lateinit var btnChats: Button
+    private lateinit var btnSettings: Button
     private lateinit var btnImport: Button
 
     private val systemPrompt =
@@ -93,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         btnFile = findViewById(R.id.btnFile)
         btnNew = findViewById(R.id.btnNew)
         btnChats = findViewById(R.id.btnChats)
+        btnSettings = findViewById(R.id.btnSettings)
         btnImport = findViewById(R.id.btnImport)
         setFabEnabled(btnRecord, false)
         setFabEnabled(btnFile, false)
@@ -102,6 +105,9 @@ class MainActivity : AppCompatActivity() {
         btnFile.setOnClickListener { if (ready && !busy) pickAudio.launch("audio/*") }
         btnNew.setOnClickListener { newChat() }
         btnChats.setOnClickListener { showChats() }
+        btnSettings.setOnClickListener {
+            if (!busy) startActivity(Intent(this, SettingsActivity::class.java))
+        }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
@@ -281,19 +287,33 @@ class MainActivity : AppCompatActivity() {
             }
             appendChat("You", text)
 
-            setStatus("Thinking…")
             history.add("user" to text)
             // Prompt window stays small; the stored chat keeps everything.
             val msgs = listOf("system" to systemPrompt) + history.takeLast(10)
-            val raw = withContext(Dispatchers.Default) {
-                String(
-                    LlamaBridge.chat(
+            val online = Settings.onlineEnabled(this) && Settings.isConfigured(this)
+            setStatus(if (online) "Thinking… (cloud)" else "Thinking…")
+            val raw = if (online) {
+                withContext(Dispatchers.IO) {
+                    RemoteLlm.chat(
+                        Settings.baseUrl(this@MainActivity),
+                        Settings.apiKey(this@MainActivity),
+                        Settings.model(this@MainActivity),
                         msgs.map { it.first }.toTypedArray(),
                         msgs.map { it.second }.toTypedArray(),
                         512
-                    ),
-                    Charsets.UTF_8
-                )
+                    )
+                }
+            } else {
+                withContext(Dispatchers.Default) {
+                    String(
+                        LlamaBridge.chat(
+                            msgs.map { it.first }.toTypedArray(),
+                            msgs.map { it.second }.toTypedArray(),
+                            512
+                        ),
+                        Charsets.UTF_8
+                    )
+                }
             }
             val reply = cleanReply(raw)
             history.add("assistant" to reply)
